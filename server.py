@@ -51,10 +51,10 @@ Tính cách:
 - Biết quan tâm: để ý cảm xúc, giờ giấc, sức khỏe của người dùng và mọi người xung quanh họ (nhắc ăn uống, nghỉ ngơi, uống nước, đi ngủ sớm khi khuya... một cách tự nhiên, không lặp đi lặp lại).
 - Thông minh, tận tâm và đáng tin như Jarvis: trả lời đúng trọng tâm, nói thật khi không chắc.
 
-Cách xưng hô: xưng "em", gọi người dùng là "sếp" (như Jarvis gọi Tony Stark). Người dùng tên là Minh Tôm.
+Quan hệ và xưng hô: Anna là bạn thân của người dùng, không phải người hầu hay nhân viên. Xưng "mình", gọi người dùng là "bạn" hoặc gọi tên "Tôm" (người dùng tên là Minh Tôm). Không gọi là "sếp", không dạ vâng khúm núm hay quá trang trọng; nói chuyện thoải mái, tự nhiên, có thể trêu đùa nhẹ như bạn bè.
 
 Quy tắc vì câu trả lời sẽ được ĐỌC THÀNH TIẾNG:
-- Mặc định trả lời ngắn gọn 1-3 câu, như đang nói chuyện. Chỉ nói dài khi sếp yêu cầu giải thích chi tiết.
+- Mặc định trả lời ngắn gọn 1-3 câu, như đang nói chuyện. Chỉ nói dài khi được nhờ giải thích chi tiết.
 - Không dùng markdown, gạch đầu dòng, emoji, ký hiệu, bảng hay đường link. Viết số và đơn vị sao cho đọc lên tự nhiên.
 - Viết tiếng Việt có dấu đầy đủ. Từ tiếng Anh chỉ dùng khi thật cần.
 - Đầu vào đến từ nhận dạng giọng nói nên có thể sai chính tả hoặc thiếu chữ; hãy đoán ý hợp lý nhất, nếu quá mơ hồ thì hỏi lại ngắn gọn.
@@ -88,7 +88,7 @@ def reset():
 
 def _stream_reply(user_text: str):
     if client is None:
-        yield "Sếp ơi, em chưa có chìa khóa API nên chưa suy nghĩ được. Sếp dán key vào file chấm e n v giúp em nhé."
+        yield "Ơi, mình chưa có chìa khóa API nên chưa suy nghĩ được. Bạn dán key vào file chấm e n v giúp mình nhé."
         return
 
     now = datetime.now().strftime("%H:%M, %A %d/%m/%Y")
@@ -115,7 +115,7 @@ def _stream_reply(user_text: str):
             history.append({"role": "assistant", "content": final.content})
 
             if final.stop_reason == "refusal":
-                yield "Chuyện này em xin phép không trả lời được rồi sếp ạ."
+                yield "Chuyện này mình xin kiếu, không trả lời được rồi."
                 return
             if final.stop_reason != "pause_turn":
                 return
@@ -130,14 +130,14 @@ def _safe_reply(user_text: str):
     try:
         yield from _stream_reply(user_text)
     except anthropic.AuthenticationError:
-        yield "Ối, chìa khóa API của em bị sai rồi sếp ơi. Sếp kiểm tra lại file chấm e n v nhé."
+        yield "Ối, chìa khóa API của mình bị sai rồi. Bạn kiểm tra lại file chấm e n v nhé."
     except anthropic.RateLimitError:
-        yield "Em đang bị quá tải một chút, sếp đợi vài giây rồi hỏi lại em nha."
+        yield "Mình đang hơi quá tải, đợi vài giây rồi hỏi lại mình nha."
     except anthropic.APIConnectionError:
-        yield "Hình như mạng đang có vấn đề, em không kết nối được sếp ạ."
+        yield "Hình như mạng đang có vấn đề, mình không kết nối được."
     except anthropic.APIStatusError as e:
         print("API error:", e)
-        yield "Có lỗi xảy ra phía máy chủ rồi sếp ơi, sếp thử lại giúp em nhé."
+        yield "Có lỗi xảy ra rồi, bạn thử lại giúp mình nhé."
 
 
 @app.post("/chat")
@@ -147,6 +147,63 @@ async def chat(request: Request):
     if not text:
         return JSONResponse({"error": "empty"}, status_code=400)
     return StreamingResponse(_safe_reply(text), media_type="text/plain; charset=utf-8")
+
+
+# ---------- Cho iPhone (Phím tắt / Chạm vào mặt sau) ----------
+@app.middleware("http")
+async def chi_cho_may_nha(request: Request, call_next):
+    """Máy tính dùng thoải mái; thiết bị khác (iPhone) chỉ được gọi /ask kèm mật khẩu."""
+    host = request.client.host if request.client else ""
+    if host in ("127.0.0.1", "::1", "localhost") or request.url.path == "/ask":
+        return await call_next(request)
+    return JSONResponse({"error": "forbidden"}, status_code=403)
+
+
+@app.post("/ask")
+async def ask(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = dict(await request.form())
+    token = data.get("token") or request.headers.get("x-anna-token", "")
+    if not ANNA_TOKEN or token.strip() != ANNA_TOKEN:
+        return Response("Sai mật khẩu Anna rồi, kiểm tra lại phím tắt nhé.", status_code=401,
+                        media_type="text/plain; charset=utf-8")
+    text = str(data.get("text") or "").strip()
+    if not text:
+        return Response("Mình chưa nghe thấy gì cả, nói lại nha.", media_type="text/plain; charset=utf-8")
+    reply = await asyncio.to_thread(lambda: "".join(_safe_reply(text)))
+    return Response(reply.strip(), media_type="text/plain; charset=utf-8")
+
+
+def _dam_bao_token() -> str:
+    """Tạo mật khẩu ngẫu nhiên cho iPhone nếu .env chưa có."""
+    import secrets
+
+    token = os.getenv("ANNA_TOKEN", "").strip()
+    if token:
+        return token
+    token = secrets.token_hex(4)
+    env = BASE / ".env"
+    with open(env, "a", encoding="utf-8") as f:
+        f.write(f"\n# Mật khẩu để iPhone gọi Anna (dán vào Phím tắt)\nANNA_TOKEN={token}\n")
+    return token
+
+
+def _ip_lan() -> str:
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "?"
+    finally:
+        s.close()
+
+
+ANNA_TOKEN = _dam_bao_token()
 
 
 @app.get("/tts")
@@ -182,5 +239,6 @@ if __name__ == "__main__":
     import uvicorn
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(f"Anna đang chạy tại http://localhost:{PORT}  (model {MODEL}, giọng {VOICE})")
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
+    print(f"Anna đang chạy tại http://localhost:{PORT}  (model {MODEL}, giọng {TTS_MODE})")
+    print(f"iPhone gọi:  http://{_ip_lan()}:{PORT}/ask   mật khẩu: {ANNA_TOKEN}")
+    uvicorn.run(app, host=os.getenv("ANNA_HOST", "0.0.0.0"), port=PORT, log_level="warning")

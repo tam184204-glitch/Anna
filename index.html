@@ -63,7 +63,7 @@
 <div id="start">
   <h1 style="color:var(--accent);letter-spacing:.5em;font-weight:300">ANNA</h1>
   <button id="startBtn">KÍCH HOẠT</button>
-  <p>Cho phép dùng micro khi trình duyệt hỏi.<br>Sau đó chỉ cần gọi <b>"Anna ơi"</b> là em trả lời.<br>Có thể nói luôn: <i>"Anna, hôm nay thời tiết thế nào?"</i></p>
+  <p>Cho phép dùng micro khi trình duyệt hỏi.<br>Sau đó chỉ cần gọi <b>"Anna ơi"</b> là Anna trả lời.<br>Có thể nói luôn: <i>"Anna, hôm nay thời tiết thế nào?"</i></p>
 </div>
 
 <header><h1>ANNA</h1><p>TRỢ LÝ CÁ NHÂN</p></header>
@@ -80,8 +80,8 @@ const core = $("core"), stateEl = $("state"), heardEl = $("heard"), log = $("log
 // Các cách nhận dạng giọng nói hay nghe nhầm tên "Anna"
 const WAKE = /(^|\s)(anna|ana|an na|anh na|ăn na|ân na|en na|anh nà|an nà|ana ơi|hannah|hana|hanna)(\s+ơi)?(?=\s|$|[,.!?])/i;
 const GREETINGS = [
-  "Dạ, em đây sếp!", "Em nghe nè sếp ơi!", "Có em! Sếp cần gì ạ?",
-  "Dạ, Anna sẵn sàng phục vụ sếp!", "Em đây, em đây, sếp gọi em có việc gì thế?",
+  "Ơi, mình nghe nè!", "Có mình đây, sao đó Tôm?", "Mình đây, mình đây! Có chuyện gì vui hả?",
+  "Ơi! Gọi mình có việc gì thế?", "Anna có mặt! Nói đi, mình nghe nè.",
 ];
 const FOLLOW_UP_MS = 9000;   // sau khi nói xong, vẫn nghe tiếp 9 giây không cần gọi tên
 const AWAKE_MS = 9000;       // sau khi gọi "Anna", chờ câu hỏi 9 giây
@@ -96,7 +96,7 @@ let ttsMode = "edge";
 function setMode(m, label) {
   mode = m;
   core.className = m;
-  stateEl.textContent = label || { idle: 'đang chờ — gọi "Anna"', listening: "em đang nghe...", thinking: "để em nghĩ chút...", speaking: "anna đang nói" }[m];
+  stateEl.textContent = label || { idle: 'đang chờ — gọi "Anna"', listening: "mình đang nghe...", thinking: "để mình nghĩ chút...", speaking: "anna đang nói" }[m];
   if (m === "speaking" || m === "thinking") stopRec(); else startRec();
 }
 
@@ -190,7 +190,7 @@ async function ask(text) {
       }
     }
   } catch (err) {
-    buffer += " Ối, em mất kết nối với máy chủ rồi sếp ơi.";
+    buffer += " Ối, mình mất kết nối với máy tính rồi.";
     bubble.appendChild(document.createTextNode(buffer));
   }
   if (myId !== speakId) return;
@@ -254,7 +254,7 @@ function stopAudio(resetMode = true) {
 }
 
 function afterSpeaking() {
-  setMode("listening", "sếp cứ nói tiếp, em nghe...");
+  setMode("listening", "cứ nói tiếp đi, mình nghe...");
   goIdleLater(FOLLOW_UP_MS);
 }
 
@@ -271,7 +271,7 @@ $("form").onsubmit = (e) => {
 $("resetBtn").onclick = async () => {
   await fetch("/reset", { method: "POST" });
   log.innerHTML = "";
-  addMsg("anna", "Em quên sạch rồi nè, mình bắt đầu lại từ đầu nha sếp!");
+  addMsg("anna", "Mình quên sạch rồi nè, mình bắt đầu lại từ đầu nha!");
 };
 
 $("startBtn").onclick = async () => {
@@ -283,8 +283,8 @@ $("startBtn").onclick = async () => {
   const h = new Date().getHours();
   const buoi = h < 11 ? "buổi sáng" : h < 14 ? "buổi trưa" : h < 18 ? "buổi chiều" : "buổi tối";
   const hello = st.ready
-    ? `Chào sếp, chúc sếp ${buoi} vui vẻ! Anna đã sẵn sàng, sếp cần gì cứ gọi tên em nhé.`
-    : "Chào sếp! Em chưa có chìa khóa API nên chưa trò chuyện được, sếp thêm key vào file chấm e n v giúp em nha.";
+    ? `Chào Tôm, ${buoi} vui vẻ nha! Cần gì cứ gọi tên mình nhé.`
+    : "Chào Tôm! Mình chưa có chìa khóa API nên chưa trò chuyện được, bạn thêm key vào file chấm e n v giúp mình nha.";
   addMsg("anna", hello);
   streamDone = true;
   speakId++;
