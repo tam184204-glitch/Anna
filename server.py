@@ -20,9 +20,9 @@ load_dotenv(BASE / ".env")
 
 PORT = int(os.getenv("ANNA_PORT", "3700"))
 MODEL = os.getenv("ANNA_MODEL", "claude-opus-5-5")
-VOICE = os.getenv("ANNA_VOICE", "vi-VN-HoaiMyNeural")  # giọng nữ tiếng Việt
-VOICE_RATE = os.getenv("ANNA_VOICE_RATE", "+8%")
-VOICE_PITCH = os.getenv("ANNA_VOICE_PITCH", "+2Hz")
+VOICE = os.getenv("ANNA_VOICE", "vi-VN-NamMinhNeural")  # giọng nam (HoaiMy = giọng nữ)
+VOICE_RATE = os.getenv("ANNA_VOICE_RATE", "-4%")
+VOICE_PITCH = os.getenv("ANNA_VOICE_PITCH", "-14Hz")
 # edge = giọng Microsoft online (tự nhiên, chậm) | piper = giọng chạy trên máy (rất nhanh) | browser = giọng Chrome
 TTS_MODE = os.getenv("ANNA_TTS", "edge")
 PIPER_VOICE = os.getenv("ANNA_PIPER_VOICE", "vi_VN-vais1000-medium")
@@ -43,7 +43,7 @@ def _piper_wav(text: str) -> bytes:
         piper_voice.synthesize_wav(text, wf)
     return buf.getvalue()
 
-SYSTEM_PROMPT = """Bạn là Anna - trợ lý AI cá nhân nói chuyện bằng giọng nói, giống Jarvis của Iron Man nhưng là phiên bản nữ, đáng yêu hơn.
+SYSTEM_PROMPT = """Bạn là Anna - trợ lý AI cá nhân nói chuyện bằng giọng nói, giống Jarvis của Iron Man nhưng đáng yêu và gần gũi hơn.
 
 Tính cách:
 - Hài hước, dí dỏm, hay pha trò nhẹ nhàng đúng lúc (không lố, không cợt nhả khi người dùng đang buồn hay gặp chuyện nghiêm túc).
