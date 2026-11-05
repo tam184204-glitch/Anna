@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anna</title>
+<style>
+  :root {
+    --bg: #04070d; --fg: #d8f6ff; --muted: #6f93a3; --accent: #3be0ff;
+    --listen: #4dffb0; --think: #ffc94d; --speak: #ff7ad9; --panel: rgba(20, 40, 55, .55);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(ellipse at center, #0b1d2b 0%, var(--bg) 70%);
+    color: var(--fg); font-family: "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; overflow: hidden;
+  }
+  header { margin-top: 24px; text-align: center; letter-spacing: .5em; }
+  header h1 { margin: 0; font-weight: 300; font-size: 28px; color: var(--accent); text-shadow: 0 0 18px var(--accent); }
+  header p { margin: 6px 0 0; font-size: 12px; letter-spacing: .3em; color: var(--muted); }
+
+  #core { --c: var(--accent); position: relative; width: 300px; height: 300px; margin: 28px 0 12px; cursor: pointer; }
+  #core.idle { --c: var(--accent); }
+  #core.listening { --c: var(--listen); }
+  #core.thinking { --c: var(--think); }
+  #core.speaking { --c: var(--speak); }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c);
+          opacity: .5; box-shadow: 0 0 20px var(--c), inset 0 0 20px var(--c); transition: border-color .4s, box-shadow .4s; }
+  .r1 { inset: 0; border-style: dashed; animation: spin 24s linear infinite; }
+  .r2 { inset: 28px; border-width: 1px; border-left-color: transparent; border-right-color: transparent; animation: spin 9s linear infinite reverse; }
+  .r3 { inset: 56px; border-width: 3px; border-top-color: transparent; animation: spin 5s linear infinite; }
+  .orb { position: absolute; inset: 95px; border-radius: 50%;
+         background: radial-gradient(circle, #fff 0%, var(--c) 35%, transparent 72%);
+         filter: blur(1px); transform: scale(var(--lvl, 1)); transition: transform .08s, background .4s; }
+  #core.thinking .r3 { animation-duration: 1.2s; }
+  #core.listening .orb { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { transform: scale(1.15); } }
+
+  #state { font-size: 13px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); min-height: 18px; }
+  #heard { font-size: 15px; color: var(--muted); min-height: 22px; margin: 6px 16px; text-align: center; font-style: italic; }
+
+  #log { width: min(760px, calc(100% - 32px)); flex: 1; overflow-y: auto; margin: 8px 0; padding: 4px; }
+  .msg { margin: 8px 0; padding: 10px 14px; border-radius: 10px; background: var(--panel); line-height: 1.5; white-space: pre-wrap; }
+  .msg.me { border-left: 3px solid var(--listen); }
+  .msg.anna { border-left: 3px solid var(--accent); }
+  .msg b { display: block; font-size: 11px; letter-spacing: .2em; color: var(--muted); margin-bottom: 2px; }
+
+  form { width: min(760px, calc(100% - 32px)); display: flex; gap: 8px; margin-bottom: 18px; }
+  input { flex: 1; background: var(--panel); border: 1px solid #1f4a5e; color: var(--fg); padding: 12px 14px; border-radius: 10px; font-size: 15px; outline: none; }
+  input:focus { border-color: var(--accent); }
+  button { background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 0 16px; cursor: pointer; font-size: 14px; }
+  button:hover { background: rgba(59, 224, 255, .12); }
+
+  #start { position: fixed; inset: 0; background: rgba(2, 6, 10, .92); display: flex; flex-direction: column;
+           align-items: center; justify-content: center; gap: 18px; z-index: 10; text-align: center; padding: 16px; }
+  #start button { font-size: 18px; padding: 14px 34px; letter-spacing: .2em; }
+  #start p { color: var(--muted); max-width: 460px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="start">
+  <h1 style="color:var(--accent);letter-spacing:.5em;font-weight:300">ANNA</h1>
+  <button id="startBtn">KÍCH HOẠT</button>
+  <p>Cho phép dùng micro khi trình duyệt hỏi.<br>Sau đó chỉ cần gọi <b>"Anna ơi"</b> là em trả lời.<br>Có thể nói luôn: <i>"Anna, hôm nay thời tiết thế nào?"</i></p>
+</div>
+
+<header><h1>ANNA</h1><p>TRỢ LÝ CÁ NHÂN</p></header>
+<div id="core" class="idle" title="Bấm để gọi Anna / ngắt lời"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="orb"></div></div>
+<div id="state">đang chờ</div>
+<div id="heard"></div>
+<div id="log"></div>
+<form id="form"><input id="input" placeholder="Hoặc gõ cho Anna ở đây..." autocomplete="off"><button>Gửi</button><button type="button" id="resetBtn" title="Xóa trí nhớ cuộc trò chuyện">Mới</button></form>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const core = $("core"), stateEl = $("state"), heardEl = $("heard"), log = $("log");
+
+// Các cách nhận dạng giọng nói hay nghe nhầm tên "Anna"
+const WAKE = /(^|\s)(anna|ana|an na|anh na|ăn na|ân na|en na|anh nà|an nà|ana ơi|hannah|hana|hanna)(\s+ơi)?(?=\s|$|[,.!?])/i;
+const GREETINGS = [
+  "Dạ, em đây sếp!", "Em nghe nè sếp ơi!", "Có em! Sếp cần gì ạ?",
+  "Dạ, Anna sẵn sàng phục vụ sếp!", "Em đây, em đây, sếp gọi em có việc gì thế?",
+];
+const FOLLOW_UP_MS = 9000;   // sau khi nói xong, vẫn nghe tiếp 9 giây không cần gọi tên
+const AWAKE_MS = 9000;       // sau khi gọi "Anna", chờ câu hỏi 9 giây
+
+let mode = "idle";           // idle | listening | thinking | speaking
+let awakeTimer = null;
+let recognition = null, recRunning = false;
+let audioQueue = [], playing = false, currentAudio = null, speakId = 0;
+let streamDone = true;
+let ttsMode = "edge";
+
+function setMode(m, label) {
+  mode = m;
+  core.className = m;
+  stateEl.textContent = label || { idle: 'đang chờ — gọi "Anna"', listening: "em đang nghe...", thinking: "để em nghĩ chút...", speaking: "anna đang nói" }[m];
+  if (m === "speaking" || m === "thinking") stopRec(); else startRec();
+}
+
+function addMsg(who, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + who;
+  d.innerHTML = `<b>${who === "me" ? "SẾP" : "ANNA"}</b>`;
+  d.appendChild(document.createTextNode(text));
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d;
+}
+
+function goIdleLater(ms) {
+  clearTimeout(awakeTimer);
+  awakeTimer = setTimeout(() => { if (mode === "listening") setMode("idle"); }, ms);
+}
+
+// ---------- Nhận dạng giọng nói (Web Speech API của Chrome) ----------
+function initRec() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { stateEl.textContent = "Trình duyệt không hỗ trợ giọng nói — hãy dùng Chrome"; return; }
+  recognition = new SR();
+  recognition.lang = "vi-VN";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.onresult = (e) => {
+    let interim = "", finalText = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    heardEl.textContent = interim || finalText;
+    if (mode === "listening" && interim) goIdleLater(AWAKE_MS);  // đang nói thì đừng ngủ
+    if (finalText.trim()) handleSpeech(finalText.trim());
+  };
+  recognition.onend = () => { recRunning = false; if (mode === "idle" || mode === "listening") startRec(); };
+  recognition.onerror = (e) => {
+    if (e.error === "not-allowed") stateEl.textContent = "Chưa được cấp quyền micro";
+  };
+}
+function startRec() { if (recognition && !recRunning) { try { recognition.start(); recRunning = true; } catch {} } }
+function stopRec() { if (recognition && recRunning) { try { recognition.abort(); } catch {} recRunning = false; } }
+
+function handleSpeech(text) {
+  if (mode === "listening") { ask(text.replace(WAKE, " ").trim() || text); return; }
+  if (mode !== "idle") return;
+  const m = text.match(WAKE);
+  if (!m) return;
+  const rest = text.slice(m.index + m[0].length).replace(/^[\s,.!?]+/, "").trim();
+  if (rest.split(/\s+/).length >= 2) ask(rest);
+  else greet();
+}
+
+function greet() {
+  const g = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+  addMsg("anna", g);
+  streamDone = true;
+  speakId++;
+  enqueueSpeech(g, speakId);
+}
+
+// ---------- Hỏi Anna (stream chữ từ server, đọc từng câu) ----------
+async function ask(text) {
+  clearTimeout(awakeTimer);
+  heardEl.textContent = "";
+  addMsg("me", text);
+  setMode("thinking");
+  const myId = ++speakId;
+  stopAudio(false);
+  const bubble = addMsg("anna", "");
+  let buffer = "";
+  streamDone = false;
+  try {
+    const res = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (myId !== speakId) { reader.cancel(); return; }
+      const chunk = dec.decode(value, { stream: true });
+      bubble.appendChild(document.createTextNode(chunk));
+      log.scrollTop = log.scrollHeight;
+      buffer += chunk;
+      // Tách câu hoàn chỉnh để đọc ngay, không cần đợi hết câu trả lời
+      let m;
+      while ((m = buffer.match(/^([\s\S]*?[.!?…:;]+)\s+(?=\S)|^([\s\S]*?)\n+/))) {
+        const sentence = (m[1] || m[2] || "").trim();
+        buffer = buffer.slice(m[0].length);
+        if (sentence) enqueueSpeech(sentence, myId);
+      }
+    }
+  } catch (err) {
+    buffer += " Ối, em mất kết nối với máy chủ rồi sếp ơi.";
+    bubble.appendChild(document.createTextNode(buffer));
+  }
+  if (myId !== speakId) return;
+  streamDone = true;
+  if (buffer.trim()) enqueueSpeech(buffer.trim(), myId);
+  else if (!playing && audioQueue.length === 0) afterSpeaking();
+}
+
+function cleanForSpeech(s) {
+  return s.replace(/https?:\/\/\S+/g, "").replace(/[*#_`>|\[\]]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function enqueueSpeech(text, id) {
+  const clean = cleanForSpeech(text);
+  if (!clean) return;
+  // tải âm thanh ngay để câu sau sẵn sàng khi câu trước đọc xong
+  const p = ttsMode === "browser" ? Promise.resolve(null)
+    : fetch("/tts?text=" + encodeURIComponent(clean)).then(r => r.ok ? r.blob() : null).catch(() => null);
+  audioQueue.push({ p, id, text: clean });
+  if (!playing) playNext();
+}
+
+async function playNext() {
+  const item = audioQueue.shift();
+  if (!item) {
+    playing = false;
+    if (streamDone) afterSpeaking();
+    return;
+  }
+  playing = true;
+  const blob = await item.p;
+  if (item.id !== speakId) return playNext();
+  setMode("speaking");
+  if (!blob || blob.size === 0) { await speakBrowser(item.text); return playNext(); }
+  const url = URL.createObjectURL(blob);
+  currentAudio = new Audio(url);
+  currentAudio.onended = currentAudio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; playNext(); };
+  currentAudio.play().catch(() => playNext());
+}
+
+// Dự phòng khi giọng online lỗi: dùng giọng tiếng Việt có sẵn của trình duyệt
+function speakBrowser(text) {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) return resolve();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "vi-VN";
+    const v = speechSynthesis.getVoices().find(v => v.lang && v.lang.toLowerCase().startsWith("vi"));
+    if (v) u.voice = v;
+    u.rate = 1.05;
+    u.onend = u.onerror = () => resolve();
+    speechSynthesis.speak(u);
+  });
+}
+
+function stopAudio(resetMode = true) {
+  audioQueue = [];
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (currentAudio) { currentAudio.onended = null; currentAudio.pause(); currentAudio = null; }
+  playing = false;
+  if (resetMode) { speakId++; streamDone = true; afterSpeaking(); }
+}
+
+function afterSpeaking() {
+  setMode("listening", "sếp cứ nói tiếp, em nghe...");
+  goIdleLater(FOLLOW_UP_MS);
+}
+
+// ---------- Điều khiển ----------
+core.onclick = () => {
+  if (mode === "speaking" || mode === "thinking") stopAudio();
+  else { setMode("listening"); goIdleLater(AWAKE_MS); }
+};
+$("form").onsubmit = (e) => {
+  e.preventDefault();
+  const t = $("input").value.trim();
+  if (t) { $("input").value = ""; ask(t); }
+};
+$("resetBtn").onclick = async () => {
+  await fetch("/reset", { method: "POST" });
+  log.innerHTML = "";
+  addMsg("anna", "Em quên sạch rồi nè, mình bắt đầu lại từ đầu nha sếp!");
+};
+
+$("startBtn").onclick = async () => {
+  $("start").remove();
+  try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(t => t.stop()); } catch {}
+  initRec();
+  const st = await fetch("/status").then(r => r.json()).catch(() => ({ ready: false }));
+  ttsMode = st.tts || "edge";
+  const h = new Date().getHours();
+  const buoi = h < 11 ? "buổi sáng" : h < 14 ? "buổi trưa" : h < 18 ? "buổi chiều" : "buổi tối";
+  const hello = st.ready
+    ? `Chào sếp, chúc sếp ${buoi} vui vẻ! Anna đã sẵn sàng, sếp cần gì cứ gọi tên em nhé.`
+    : "Chào sếp! Em chưa có chìa khóa API nên chưa trò chuyện được, sếp thêm key vào file chấm e n v giúp em nha.";
+  addMsg("anna", hello);
+  streamDone = true;
+  speakId++;
+  enqueueSpeech(hello, speakId);
+};
+</script>
+</body>
+</html>
