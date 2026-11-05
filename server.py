@@ -23,7 +23,25 @@ MODEL = os.getenv("ANNA_MODEL", "claude-opus-5-5")
 VOICE = os.getenv("ANNA_VOICE", "vi-VN-HoaiMyNeural")  # giọng nữ tiếng Việt
 VOICE_RATE = os.getenv("ANNA_VOICE_RATE", "+8%")
 VOICE_PITCH = os.getenv("ANNA_VOICE_PITCH", "+2Hz")
-TTS_MODE = os.getenv("ANNA_TTS", "edge")  # edge = giọng Microsoft online (hay hơn) | browser = giọng Chrome (nhanh hơn)
+# edge = giọng Microsoft online (tự nhiên, chậm) | piper = giọng chạy trên máy (rất nhanh) | browser = giọng Chrome
+TTS_MODE = os.getenv("ANNA_TTS", "edge")
+PIPER_VOICE = os.getenv("ANNA_PIPER_VOICE", "vi_VN-vais1000-medium")
+
+piper_voice = None
+if TTS_MODE == "piper":
+    from piper import PiperVoice
+
+    piper_voice = PiperVoice.load(str(BASE / "voices" / f"{PIPER_VOICE}.onnx"))
+
+
+def _piper_wav(text: str) -> bytes:
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        piper_voice.synthesize_wav(text, wf)
+    return buf.getvalue()
 
 SYSTEM_PROMPT = """Bạn là Anna - trợ lý AI cá nhân nói chuyện bằng giọng nói, giống Jarvis của Iron Man nhưng là phiên bản nữ, đáng yêu hơn.
 
@@ -136,6 +154,9 @@ async def tts(text: str):
     text = text.strip()[:1500]
     if not text:
         return Response(status_code=204)
+    if piper_voice is not None:
+        wav = await asyncio.to_thread(_piper_wav, text)
+        return Response(wav, media_type="audio/wav")
     # Dịch vụ giọng nói đôi khi chập chờn -> thử lại vài lần
     for attempt in range(3):
         try:
