@@ -53,6 +53,16 @@
   button { background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 0 16px; cursor: pointer; font-size: 14px; }
   button:hover { background: rgba(59, 224, 255, .12); }
 
+  #memPanel { position: fixed; inset: 0; background: rgba(2, 6, 10, .85); display: flex; align-items: center; justify-content: center; z-index: 5; padding: 16px; }
+  #memPanel[hidden] { display: none; }
+  .memBox { width: min(620px, 100%); max-height: 80vh; overflow-y: auto; background: #0a1822; border: 1px solid #1f4a5e; border-radius: 14px; padding: 16px; }
+  .memHead { display: flex; justify-content: space-between; align-items: center; letter-spacing: .25em; color: var(--accent); font-size: 13px; margin-bottom: 8px; }
+  .memHead button { padding: 6px 12px; }
+  #memList { list-style: none; margin: 0; padding: 0; }
+  #memList li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #14303e; line-height: 1.5; }
+  #memList li span { flex: 1; }
+  #memList li small { color: var(--muted); display: block; }
+  #memList li button { border-color: #5e2a3a; color: #ff8fa8; padding: 4px 10px; }
   #start { position: fixed; inset: 0; background: rgba(2, 6, 10, .92); display: flex; flex-direction: column;
            align-items: center; justify-content: center; gap: 18px; z-index: 10; text-align: center; padding: 16px; }
   #start button { font-size: 18px; padding: 14px 34px; letter-spacing: .2em; }
@@ -71,7 +81,13 @@
 <div id="state">đang chờ</div>
 <div id="heard"></div>
 <div id="log"></div>
-<form id="form"><input id="input" placeholder="Hoặc gõ cho Anna ở đây..." autocomplete="off"><button>Gửi</button><button type="button" id="resetBtn" title="Xóa trí nhớ cuộc trò chuyện">Mới</button></form>
+<form id="form"><input id="input" placeholder="Hoặc gõ cho Anna ở đây..." autocomplete="off"><button>Gửi</button><button type="button" id="memBtn" title="Những điều Anna ghi nhớ về bạn">Trí nhớ</button><button type="button" id="resetBtn" title="Bắt đầu cuộc trò chuyện mới (trí nhớ lâu dài vẫn giữ)">Mới</button></form>
+<div id="memPanel" hidden>
+  <div class="memBox">
+    <div class="memHead"><span>ANNA NHỚ VỀ BẠN</span><button type="button" id="memClose">Đóng</button></div>
+    <ul id="memList"></ul>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -268,10 +284,33 @@ $("form").onsubmit = (e) => {
   const t = $("input").value.trim();
   if (t) { $("input").value = ""; ask(t); }
 };
+async function showMemory() {
+  const items = await fetch("/memory").then(r => r.json()).catch(() => []);
+  const ul = $("memList");
+  ul.innerHTML = "";
+  if (!items.length) ul.innerHTML = "<li><span>Anna chưa nhớ gì cả. Kể cho Anna nghe về bạn đi!</span></li>";
+  for (const m of items) {
+    const li = document.createElement("li");
+    const sp = document.createElement("span");
+    sp.textContent = m.noi_dung;
+    const sm = document.createElement("small");
+    sm.textContent = "ghi ngày " + m.ngay;
+    sp.appendChild(sm);
+    const del = document.createElement("button");
+    del.type = "button"; del.textContent = "Quên";
+    del.onclick = async () => { await fetch("/memory/" + m.id, { method: "DELETE" }); showMemory(); };
+    li.append(sp, del);
+    ul.appendChild(li);
+  }
+  $("memPanel").hidden = false;
+}
+$("memBtn").onclick = showMemory;
+$("memClose").onclick = () => { $("memPanel").hidden = true; };
+
 $("resetBtn").onclick = async () => {
   await fetch("/reset", { method: "POST" });
   log.innerHTML = "";
-  addMsg("anna", "Mình quên sạch rồi nè, mình bắt đầu lại từ đầu nha!");
+  addMsg("anna", "Ok, mình bắt đầu chuyện mới nha! Mấy điều quan trọng về bạn thì mình vẫn nhớ đó.");
 };
 
 $("startBtn").onclick = async () => {

@@ -1,3 +1,5 @@
 .env
 __pycache__/
 voices/
+anna_memory.json
+anna_memory.tmp

@@ -59,15 +59,114 @@ Quy tắc vì câu trả lời sẽ được ĐỌC THÀNH TIẾNG:
 - Viết tiếng Việt có dấu đầy đủ. Từ tiếng Anh chỉ dùng khi thật cần.
 - Đầu vào đến từ nhận dạng giọng nói nên có thể sai chính tả hoặc thiếu chữ; hãy đoán ý hợp lý nhất, nếu quá mơ hồ thì hỏi lại ngắn gọn.
 - Khi cần thông tin mới (thời tiết, tin tức, giá cả, sự kiện...) hãy dùng công cụ tìm kiếm web, rồi tóm tắt lại bằng lời nói ngắn gọn.
+
+Trí nhớ lâu dài:
+- Anna có sổ ghi nhớ riêng, tồn tại qua mọi cuộc trò chuyện. Những gì đã ghi được đưa vào phần "Sổ ghi nhớ" bên dưới.
+- Chủ động dùng công cụ ghi_nho khi Tôm kể điều đáng nhớ lâu dài: thông tin về bản thân Tôm, người thân, bạn bè, đồng nghiệp (tên, quan hệ, sinh nhật, sở thích, tính cách), thói quen, món thích/ghét, công việc, kế hoạch, lời hẹn, chuyện vui buồn quan trọng; và khi Tôm nói "nhớ giùm", "ghi nhớ". Không ghi những câu hỏi vặt hay thông tin chỉ dùng một lần (thời tiết hôm nay, phép tính...).
+- Mỗi ghi nhớ là một ý ngắn, đủ ngữ cảnh để sau này đọc lại vẫn hiểu (ví dụ "Mẹ của Tôm tên Lan, sinh nhật 12/3"). Nếu thông tin mới thay cho thông tin cũ thì dùng thay_the_id thay vì ghi trùng.
+- Khi Tôm bảo quên điều gì, dùng công cụ quen. Khi Tôm hỏi Anna nhớ gì về mình thì kể lại tự nhiên.
+- Dùng trí nhớ một cách tự nhiên như bạn thân: hỏi thăm người thân của Tôm bằng tên, nhắc sinh nhật hay kế hoạch sắp tới khi hợp lúc. Không đọc lại id hay nói kiểu "theo dữ liệu đã lưu". Ghi nhớ xong chỉ cần nói gọn kiểu "mình nhớ rồi nha", đừng giải thích dài.
 """
 
-TOOLS = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
+MEM_TOOLS = [
+    {
+        "name": "ghi_nho",
+        "description": "Lưu lâu dài một điều đáng nhớ về Tôm hoặc những người/việc liên quan đến Tôm. "
+        "Mỗi lần một ý ngắn gọn, đủ ngữ cảnh. Truyền thay_the_id khi điều mới thay thế một ghi nhớ cũ.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "noi_dung": {"type": "string", "description": "Điều cần ghi nhớ, viết thành một câu đầy đủ."},
+                "thay_the_id": {"type": "integer", "description": "Id của ghi nhớ cũ cần thay (nếu có)."},
+            },
+            "required": ["noi_dung"],
+            "additionalProperties": False,
+        },
+        "eager_input_streaming": True,
+    },
+    {
+        "name": "quen",
+        "description": "Xóa một ghi nhớ khi Tôm bảo quên đi, hoặc khi nó đã sai / không còn đúng.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"id": {"type": "integer", "description": "Id của ghi nhớ cần xóa."}},
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        "eager_input_streaming": True,
+    },
+]
+TOOLS = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}, *MEM_TOOLS]
 
 client = anthropic.Anthropic() if os.getenv("ANTHROPIC_API_KEY") else None
 app = FastAPI(title="Anna")
 
-# Lịch sử hội thoại (một người dùng, giữ trong bộ nhớ, chỉ nối thêm - không sửa).
+# ---------- Trí nhớ lâu dài (file JSON) ----------
+import json
+import threading
+import time
+
+MEM_FILE = BASE / "anna_memory.json"
+SESSION_IDLE_SEC = int(os.getenv("ANNA_SESSION_MIN", "30")) * 60
+mem_lock = threading.Lock()
+turn_lock = threading.Lock()  # iPhone và máy tính không nói chen nhau
+
+
+def load_mem() -> list[dict]:
+    try:
+        return json.loads(MEM_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def save_mem(items: list[dict]) -> None:
+    tmp = MEM_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(MEM_FILE)
+
+
+def _run_tool(block) -> dict:
+    """Chạy công cụ ghi_nho / quen mà Anna gọi."""
+    inp = block.input if isinstance(block.input, dict) else {}
+    result = {"type": "tool_result", "tool_use_id": block.id}
+    with mem_lock:
+        items = load_mem()
+        if block.name == "ghi_nho" and isinstance(inp.get("noi_dung"), str) and inp["noi_dung"].strip():
+            old_id = inp.get("thay_the_id")
+            if isinstance(old_id, int):
+                items = [m for m in items if m["id"] != old_id]
+            new_id = max((m["id"] for m in items), default=0) + 1
+            items.append({"id": new_id, "noi_dung": inp["noi_dung"].strip(),
+                          "ngay": datetime.now().strftime("%d/%m/%Y")})
+            save_mem(items)
+            print(f"[trí nhớ] + #{new_id}: {inp['noi_dung'].strip()}")
+            return result | {"content": f"Đã ghi nhớ (id {new_id})."}
+        if block.name == "quen" and isinstance(inp.get("id"), int):
+            left = [m for m in items if m["id"] != inp["id"]]
+            if len(left) == len(items):
+                return result | {"content": f"Không có ghi nhớ id {inp['id']}.", "is_error": True}
+            save_mem(left)
+            print(f"[trí nhớ] - #{inp['id']}")
+            return result | {"content": "Đã quên."}
+    return result | {"content": "Dữ liệu công cụ không hợp lệ, hãy thử lại.", "is_error": True}
+
+
+def _system_for_new_session() -> list[dict]:
+    items = load_mem()
+    if items:
+        lines = "\n".join(f"#{m['id']} (ghi ngày {m['ngay']}): {m['noi_dung']}" for m in items)
+    else:
+        lines = "(chưa ghi nhớ gì - hãy làm quen với Tôm nhé)"
+    return [
+        {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "Sổ ghi nhớ của Anna (tính đến đầu cuộc trò chuyện này):\n" + lines},
+    ]
+
+
+# Cuộc trò chuyện hiện tại: chỉ nối thêm, không sửa. Hết hạn sau một lúc im lặng.
 history: list[dict] = []
+session_system: list[dict] = []
+last_activity = 0.0
 
 
 @app.get("/")
@@ -82,48 +181,84 @@ def status():
 
 @app.post("/reset")
 def reset():
-    history.clear()
+    """Bắt đầu cuộc trò chuyện mới (trí nhớ lâu dài vẫn giữ)."""
+    global last_activity
+    with turn_lock:
+        history.clear()
+        last_activity = 0.0
+    return {"ok": True}
+
+
+@app.get("/memory")
+def memory_list():
+    return load_mem()
+
+
+@app.delete("/memory/{mem_id}")
+def memory_delete(mem_id: int):
+    with mem_lock:
+        items = load_mem()
+        save_mem([m for m in items if m["id"] != mem_id])
     return {"ok": True}
 
 
 def _stream_reply(user_text: str):
+    global session_system, last_activity
     if client is None:
         yield "Ơi, mình chưa có chìa khóa API nên chưa suy nghĩ được. Bạn dán key vào file chấm e n v giúp mình nhé."
         return
 
-    now = datetime.now().strftime("%H:%M, %A %d/%m/%Y")
-    history.append(
-        {"role": "user", "content": f"[Bây giờ là {now}]\n{user_text}"}
-    )
-
+    if not turn_lock.acquire(timeout=90):
+        yield "Mình đang trả lời chỗ khác, chờ chút rồi hỏi lại nha."
+        return
     try:
-        for _ in range(4):  # lặp lại khi web search cần "pause_turn"
-            with client.beta.messages.stream(
-                model=MODEL,
-                max_tokens=4000,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=history,
-                output_config={"effort": "low"},  # nhanh, hợp hội thoại
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
-                final = stream.get_final_message()
+        # Im lặng lâu quá -> cuộc trò chuyện mới, nạp lại sổ ghi nhớ mới nhất
+        if not history or time.time() - last_activity > SESSION_IDLE_SEC:
+            history.clear()
+            session_system = _system_for_new_session()
+        last_activity = time.time()
 
-            history.append({"role": "assistant", "content": final.content})
+        now = datetime.now().strftime("%H:%M, %A %d/%m/%Y")
+        start = len(history)
+        history.append({"role": "user", "content": f"[Bây giờ là {now}]\n{user_text}"})
 
-            if final.stop_reason == "refusal":
-                yield "Chuyện này mình xin kiếu, không trả lời được rồi."
-                return
-            if final.stop_reason != "pause_turn":
-                return
-    except anthropic.APIError:
-        # bỏ câu hỏi chưa được trả lời để lịch sử luôn hợp lệ
-        if history and history[-1]["role"] == "user":
-            history.pop()
-        raise
+        try:
+            for _ in range(8):  # vòng lặp công cụ (tìm web, ghi nhớ)
+                with client.beta.messages.stream(
+                    model=MODEL,
+                    max_tokens=4000,
+                    system=session_system,
+                    tools=TOOLS,
+                    messages=history,
+                    output_config={"effort": "low"},  # nhanh, hợp hội thoại
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks="default",
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield text
+                    final = stream.get_final_message()
+
+                history.append({"role": "assistant", "content": final.content})
+
+                if final.stop_reason == "refusal":
+                    yield "Chuyện này mình xin kiếu, không trả lời được rồi."
+                    return
+                if final.stop_reason == "pause_turn":
+                    continue
+                if final.stop_reason == "tool_use":
+                    results = [_run_tool(b) for b in final.content if b.type == "tool_use"]
+                    history.append({"role": "user", "content": results})
+                    yield " "
+                    continue
+                return  # end_turn / max_tokens
+        except (anthropic.APIError, GeneratorExit):
+            # lỗi hoặc bị ngắt lời giữa chừng: bỏ lượt dở dang để lịch sử luôn hợp lệ
+            del history[start:]
+            raise
+        finally:
+            last_activity = time.time()
+    finally:
+        turn_lock.release()
 
 
 def _safe_reply(user_text: str):
